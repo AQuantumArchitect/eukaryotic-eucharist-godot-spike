@@ -75,7 +75,28 @@ def main() -> int:
         world_present = page.evaluate("!!window.__eeWorld")
         edges_len = page.evaluate("window.EE ? window.EE.ORGAN_GRAPH_EDGES.length : null")
 
+        # Phase 0 check: KernelBridge.step_game() must be able to drive the REAL game step
+        # (K.step, not just stepEcology) — this is what actually moves the player. Drive it
+        # directly here (bypassing GDScript/Input entirely) so this check is independent of
+        # whichever scene happens to be loaded as run/main_scene.
+        player_x1 = page.evaluate("""
+            (() => { const w = window.__eeWorld; const e = w.entities.find(x => x.id === w.playerId); return e ? e.x : null; })()
+        """)
+        page.evaluate("""
+            (() => {
+                const w = window.__eeWorld;
+                for (let i = 0; i < 30; i++) { window.EE.step(w, {moveX: 1, moveY: 0}, 1/60, false); }
+            })()
+        """)
+        player_x2 = page.evaluate("""
+            (() => { const w = window.__eeWorld; const e = w.entities.find(x => x.id === w.playerId); return e ? e.x : null; })()
+        """)
+        player_moved = (
+            player_x1 is not None and player_x2 is not None and player_x2 != player_x1
+        )
+
         log(args.json, f"t1={t1} t2={t2} window.EE={ee_present} world={world_present} edges={edges_len}")
+        log(args.json, f"player_x1={player_x1} player_x2={player_x2} player_moved={player_moved}")
         page.screenshot(path=screenshot_path)
         log(args.json, f"Screenshot: {screenshot_path}")
         browser.close()
@@ -88,6 +109,7 @@ def main() -> int:
     ok = (
         t1 is not None and t2 is not None and t2 > t1
         and ee_present and world_present and edges_len and edges_len > 0
+        and player_moved
     )
 
     if args.json:
@@ -98,6 +120,9 @@ def main() -> int:
             "ee_present": ee_present,
             "world_present": world_present,
             "edges_len": edges_len,
+            "player_x1": player_x1,
+            "player_x2": player_x2,
+            "player_moved": player_moved,
             "console_errors": console_errors,
             "screenshot": os.path.abspath(screenshot_path),
         }))

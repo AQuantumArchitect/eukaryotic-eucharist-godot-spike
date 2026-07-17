@@ -25,6 +25,21 @@ func boot(seed_val: int) -> bool:
 		push_error("KernelBridge: boot failed, window.EE not ready or createWorld threw.")
 	return booted
 
+## Runs `code` (a JS expression producing a JSON string) through JavaScriptBridge.eval and parses
+## the result. Every other method in this file is a thin wrapper around this — the one place that
+## actually talks to window.EE. Returns null on any eval/parse failure (logged via push_error).
+func _eval_json(code: String):
+	var result = JavaScriptBridge.eval(code, true)
+	if typeof(result) != TYPE_STRING:
+		push_error("KernelBridge: eval returned non-string — check browser console for a JS exception.")
+		return null
+	var json := JSON.new()
+	var err := json.parse(result)
+	if err != OK:
+		push_error("KernelBridge: JSON parse failed: %s" % json.get_error_message())
+		return null
+	return json.data
+
 ## Advances the real kernel by sim_seconds (in the kernel's own fixed 1/60 steps) and returns a
 ## snapshot: static DAG topology (fetched every call — cheap, small) plus the live HUD projection
 ## the organelle graph nodes will highlight from. Kernel math happens entirely inside this one
@@ -47,13 +62,62 @@ func step_and_snapshot(sim_seconds: float) -> Dictionary:
 		});
 	})()
 	""" % sim_seconds
-	var result = JavaScriptBridge.eval(code, true)
-	if typeof(result) != TYPE_STRING:
-		push_error("KernelBridge: step eval returned non-string — check browser console for a JS exception.")
+	var data = _eval_json(code)
+	return data if data is Dictionary else {}
+
+## Advances the REAL game — player movement/combat/economy, not just ecology — by one command.
+## `command` must be a Dictionary shaped like index.html's command() (moveX, moveY, feed, repair,
+## rasp, dash, acid, sporeshot, harpoon, cloud, mark, engulf, ward, jettison, flame, divide,
+## compact, aimX, aimY) — the game view builds this every physics frame and hands it straight to
+## K.step() unmodified. Returns {render: getRenderProjection(), hud: getHudProjection(), t}.
+## Call once per physics frame; do not throttle by SimParams.poll_interval_s (that field is
+## graph_view.gd's own knob, unrelated to this per-frame gameplay channel).
+func step_game(command: Dictionary, dt: float, sheltered: bool = false) -> Dictionary:
+	if not booted:
 		return {}
-	var json := JSON.new()
-	var err := json.parse(result)
-	if err != OK:
-		push_error("KernelBridge: JSON parse failed: %s" % json.get_error_message())
-		return {}
-	return json.data
+	var code := """
+	(function() {
+		var w = window.__eeWorld;
+		var cmd = %s;
+		window.EE.step(w, cmd, %f, %s);
+		return JSON.stringify({
+			render: window.EE.getRenderProjection(w),
+			hud: window.EE.getHudProjection(w),
+			t: w.t
+		});
+	})()
+	""" % [JSON.stringify(command), dt, ("true" if sheltered else "false")]
+	var data = _eval_json(code)
+	return data if data is Dictionary else {}
+
+## Discrete (non-per-frame) action wrappers. Each is a single eval that just relays the kernel's
+## own {ok, reason, ...} result straight back — no interpretation, no branching, so this file stays
+## zero-sim-logic. All default to acting on the current player (world.playerId), matching every one
+## of these kernel exports' own default entityId argument.
+func buy_offering(offering_id: String) -> Dictionary:
+	var data = _eval_json("JSON.stringify(window.EE.buyOffering(window.__eeWorld, %s))" % JSON.stringify(offering_id))
+	return data if data is Dictionary else {"ok": false, "reason": "bridge error"}
+
+func remove_organelle(org_id: String) -> Dictionary:
+	var data = _eval_json("JSON.stringify(window.EE.removeOrganelle(window.__eeWorld, %s))" % JSON.stringify(org_id))
+	return data if data is Dictionary else {"ok": false, "reason": "bridge error"}
+
+func trade_at_yuki(res: String, dir: String) -> Dictionary:
+	var data = _eval_json("JSON.stringify(window.EE.tradeAtYuki(window.__eeWorld, %s, %s))" % [JSON.stringify(res), JSON.stringify(dir)])
+	return data if data is Dictionary else {"ok": false, "reason": "bridge error"}
+
+func start_manufacturing(offering_id: String) -> Dictionary:
+	var data = _eval_json("JSON.stringify(window.EE.startManufacturing(window.__eeWorld, %s))" % JSON.stringify(offering_id))
+	return data if data is Dictionary else {"ok": false, "reason": "bridge error"}
+
+func kill_player() -> Dictionary:
+	var data = _eval_json("JSON.stringify(window.EE.killPlayer(window.__eeWorld))")
+	return data if data is Dictionary else {"ok": false, "reason": "bridge error"}
+
+func get_yuki_offerings(source: String = "yuki") -> Array:
+	var data = _eval_json("JSON.stringify(window.EE.getYukiOfferings(window.__eeWorld, window.__eeWorld.playerId, %s))" % JSON.stringify(source))
+	return data if data is Array else []
+
+func get_yuki_trades() -> Array:
+	var data = _eval_json("JSON.stringify(window.EE.getYukiTrades(window.__eeWorld))")
+	return data if data is Array else []
