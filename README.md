@@ -56,6 +56,17 @@ python3 -m http.server 8788 --directory dist_web   # serve it
 ```
 Open `http://localhost:8788/index.html` in a browser.
 
+## Play it now (deployed)
+
+**https://aquantumarchitect.github.io/eukaryotic-eucharist-godot-spike/**
+
+Deployed via GitHub Pages, serving the `gh-pages` branch (source lives on `master`; `gh-pages` holds
+only the built `dist_web/` output, force-pushed each deploy — same split as the `.gitignore`'d
+`dist_web/` locally). Redeploy after any change with:
+```
+./tools/deploy_pages.sh
+```
+
 ## Iterate: `./tools/test.sh`
 
 One command — export, serve, headless-verify the bridge is genuinely live, tear down:
