@@ -1,0 +1,8 @@
+<script type="module">
+  // Loads the REAL, unmodified game kernel (copied in as graph_kernel.js by build_web.sh — a plain
+  // rename for correct browser MIME typing, no source edits) into this page's actual JS context, and
+  // exposes it on window so KernelBridge.gd can drive it via JavaScriptBridge.eval(). This <script> tag
+  // is the entire "port": zero kernel logic is reimplemented in GDScript.
+  import * as EE from "./graph_kernel.js";
+  window.EE = EE;
+</script>

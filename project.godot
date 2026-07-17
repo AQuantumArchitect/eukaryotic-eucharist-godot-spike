@@ -1,0 +1,25 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are meant to be edited.
+
+config_version=5
+
+[application]
+
+config/name="Eukaryotic Eucharist — Godot Spike"
+run/main_scene="res://graph_view.tscn"
+config/features=PackedStringArray("4.5")
+
+[autoload]
+
+KernelBridge="*res://kernel_bridge.gd"
+
+[display]
+
+window/size/viewport_width=1024
+window/size/viewport_height=768
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
