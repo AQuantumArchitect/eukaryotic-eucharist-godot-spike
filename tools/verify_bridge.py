@@ -120,9 +120,26 @@ def main() -> int:
             and player_x4 != player_x3 and player_vx > 5.0
         )
 
+        # Phase 2 check: confirm the entity pool is genuinely instantiating/tracking on-screen
+        # Godot nodes for NPCs, not just the player. render.entities.length must exceed 1 (NPCs
+        # exist in the sim), and window.__eeGodotEntityCount (a debug hook game_view.gd pushes via
+        # JavaScriptBridge.eval, see view/game_view.gd) must be a nonzero count that never exceeds
+        # the kernel's own true entity count — EntityPool deliberately culls off-screen entities,
+        # so exact equality isn't expected, only "some, and never more than exist."
+        kernel_entities_len = page.evaluate("""
+            (() => { const w = window.__eeWorld; return w ? window.EE.getRenderProjection(w).entities.length : null; })()
+        """)
+        godot_entity_count = page.evaluate("window.__eeGodotEntityCount ?? null")
+        entities_pooled_sane = (
+            kernel_entities_len is not None and kernel_entities_len > 1
+            and godot_entity_count is not None and godot_entity_count > 0
+            and godot_entity_count <= kernel_entities_len
+        )
+
         log(args.json, f"t1={t1} t2={t2} window.EE={ee_present} world={world_present} edges={edges_len}")
         log(args.json, f"player_x1={player_x1} player_x2={player_x2} player_moved={player_moved}")
         log(args.json, f"player_x3={player_x3} player_x4={player_x4} player_vx={player_vx} input_moved_player={input_moved_player}")
+        log(args.json, f"kernel_entities_len={kernel_entities_len} godot_entity_count={godot_entity_count} entities_pooled_sane={entities_pooled_sane}")
         page.screenshot(path=screenshot_path)
         log(args.json, f"Screenshot: {screenshot_path}")
         browser.close()
@@ -137,6 +154,7 @@ def main() -> int:
         and ee_present and world_present and edges_len and edges_len > 0
         and player_moved
         and input_moved_player
+        and entities_pooled_sane
     )
 
     if args.json:
@@ -154,6 +172,9 @@ def main() -> int:
             "player_x4": player_x4,
             "player_vx": player_vx,
             "input_moved_player": input_moved_player,
+            "kernel_entities_len": kernel_entities_len,
+            "godot_entity_count": godot_entity_count,
+            "entities_pooled_sane": entities_pooled_sane,
             "console_errors": console_errors,
             "screenshot": os.path.abspath(screenshot_path),
         }))
