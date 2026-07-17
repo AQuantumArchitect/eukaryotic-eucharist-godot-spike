@@ -23,12 +23,24 @@ python3 -m http.server 8788 --directory dist_web   # serve it
 ```
 Open `http://localhost:8788/index.html` in a browser.
 
-## Verified
+## Iterate: `./test.sh`
 
-`t at claude_verify_spike.py` — a Playwright headless-Chromium run confirms `window.__eeWorld.t`
-genuinely advances between reads (the kernel is really ticking, not a static snapshot), and a
-screenshot shows the `GraphEdit` correctly distinguishing owned vs. unowned organelles with live
-counts.
+One command — export, serve, headless-verify the bridge is genuinely live, tear down:
+```
+./test.sh
+```
+Run this after touching `kernel_bridge.gd`, `graph_view.gd`, `export_presets.cfg`, or the game's
+own `graph_kernel.mjs`. It's the regression check for the *bridge* specifically — kernel logic
+still gets its own coverage from the existing `smoke_test.mjs`/`burnin.mjs` headless harness in the
+game repo, untouched by any of this. `verify_bridge.py` (Playwright) asks `window.__eeWorld.t`
+whether sim time genuinely advances between two reads 5s apart — a frozen/broken bridge shows
+`t1 == t2`; a real one doesn't. Caught a real, transient issue on first use: the shared kernel
+was mid-edit by the other collaborator (a twilight-grazer maturation refactor) when the export
+copied it, producing one broken build that self-resolved on the next run — exactly the kind of
+break this check exists to catch, not something to "fix" here.
+
+Override `PORT`, `PYTHON_BIN`, or `SPIKE_CHROME_PATH` as env vars if the defaults (port 8788, the
+`torch118` venv's Python, a specific cached Chromium build) don't match your machine.
 
 ## Explicitly out of scope here
 
