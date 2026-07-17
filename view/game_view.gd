@@ -13,6 +13,7 @@ extends Node2D
 @onready var particle_layer: Node2D = $ParticleLayer
 @onready var entity_layer: Node2D = $EntityLayer
 @onready var hud_root = $HudRoot
+@onready var shop_panel = $ShopLayer/ShopPanel
 
 const FIELD_SCRIPT := preload("res://view/effects/field_view.gd")
 const HAZARD_SCRIPT := preload("res://view/effects/hazard_view.gd")
@@ -29,6 +30,7 @@ var entity_pool: EntityPool
 var field_pool: NodePool
 var hazard_pool: NodePool
 var particle_pool: NodePool
+var last_hud: Dictionary = {}
 
 func _ready() -> void:
 	entity_pool = EntityPool.new(entity_layer)
@@ -53,12 +55,32 @@ func _make_node(script: GDScript) -> Node2D:
 	node.set_script(script)
 	return node
 
+func _unhandled_input(event: InputEvent) -> void:
+	if not booted or not (event is InputEventKey) or not event.pressed or event.echo:
+		return
+	if event.keycode == KEY_E:
+		_toggle_shop()
+	elif event.keycode == KEY_ESCAPE and shop_panel.visible:
+		shop_panel.close()
+
+func _toggle_shop() -> void:
+	if shop_panel.visible:
+		shop_panel.close()
+		return
+	if last_hud.get("nearCrab", false) and not last_hud.get("nearYuki", false):
+		shop_panel.open_shop("crab")
+	elif last_hud.get("nearYuki", false):
+		shop_panel.open_shop("yuki")
+
 func _physics_process(delta: float) -> void:
 	if not booted:
 		return
 	var mouse_world := camera.get_global_mouse_position()
 	var command := GameInput.build(player_pos, mouse_world)
-	var snap := KernelBridge.step_game(command, delta, false)
+	# Sheltered mirrors index.html's own `sheltered = shop is open` flag (index.html:435): K.step
+	# still advances world.t and runs yukiRestore's passive regen, it just skips
+	# applyPlayerCommands — the "sim paused for the player" the shop modal wants, not a hard freeze.
+	var snap := KernelBridge.step_game(command, delta, shop_panel.visible)
 	if snap.is_empty():
 		return
 	_apply_snapshot(snap, delta)
@@ -120,6 +142,8 @@ func _apply_snapshot(snap: Dictionary, delta: float) -> void:
 	hazard_pool.update(render.get("hazards", []), unwrap_and_cull, func(node, item): node.update(item))
 	particle_pool.update(render.get("particles", []), unwrap_and_cull, func(node, item): node.update(item))
 
-	hud_root.apply(snap.get("hud", {}), render, delta)
+	last_hud = snap.get("hud", {})
+	hud_root.apply(last_hud, render, delta)
+	shop_panel.apply_hud(last_hud)
 
 	status_label.text = "t = %.1fs  entities = %d" % [sim_t, entities.size()]

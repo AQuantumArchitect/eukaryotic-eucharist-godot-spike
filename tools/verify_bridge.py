@@ -152,11 +152,38 @@ def main() -> int:
             and abs(godot_hud_hp.get("max", -999) - kernel_hud_hp.get("max", -999)) < 0.01
         )
 
+        # Phase 4 check: drive K.buyOffering() directly — bridge/kernel_bridge.gd's buy_offering()
+        # is a thin 1:1 relay over this exact call, so this proves the discrete-action channel
+        # itself works, the same scope Phase 0 proved for the per-frame command channel. Doesn't
+        # drive shop_panel.gd's actual UI click, since that needs the player standing near Yuki
+        # (not guaranteed at this fixed seed/tick) — the panel's own filter/routing logic
+        # (ShopLogic) is a pure function ported directly from index.html, exercised by hand-reading
+        # rather than a live click here.
+        buy_result = page.evaluate("""
+            (() => {
+                const w = window.__eeWorld;
+                const offerings = window.EE.getYukiOfferings(w);
+                const target = offerings.find(o => o.graftBuyable);
+                if (!target) return { ok: false, reason: 'no graftBuyable offering found', before: null, after: null };
+                const before = window.EE.getHudProjection(w).organelles.find(x => x.id === target.organelle);
+                const beforeCount = before ? before.count : 0;
+                const res = window.EE.buyOffering(w, 'buy_graft_' + target.organelle);
+                const after = window.EE.getHudProjection(w).organelles.find(x => x.id === target.organelle);
+                const afterCount = after ? after.count : 0;
+                return { ok: res.ok, reason: res.reason || null, organelle: target.organelle, before: beforeCount, after: afterCount };
+            })()
+        """)
+        build_worked = (
+            buy_result is not None and buy_result.get("ok") is True
+            and buy_result.get("after", 0) > buy_result.get("before", -1)
+        )
+
         log(args.json, f"t1={t1} t2={t2} window.EE={ee_present} world={world_present} edges={edges_len}")
         log(args.json, f"player_x1={player_x1} player_x2={player_x2} player_moved={player_moved}")
         log(args.json, f"player_x3={player_x3} player_x4={player_x4} player_vx={player_vx} input_moved_player={input_moved_player}")
         log(args.json, f"kernel_entities_len={kernel_entities_len} godot_entity_count={godot_entity_count} entities_pooled_sane={entities_pooled_sane}")
         log(args.json, f"godot_hud_hp={godot_hud_hp} kernel_hud_hp={kernel_hud_hp} hud_reflects_kernel={hud_reflects_kernel}")
+        log(args.json, f"buy_result={buy_result} build_worked={build_worked}")
         page.screenshot(path=screenshot_path)
         log(args.json, f"Screenshot: {screenshot_path}")
         browser.close()
@@ -173,6 +200,7 @@ def main() -> int:
         and input_moved_player
         and entities_pooled_sane
         and hud_reflects_kernel
+        and build_worked
     )
 
     if args.json:
@@ -196,6 +224,8 @@ def main() -> int:
             "godot_hud_hp": godot_hud_hp,
             "kernel_hud_hp": kernel_hud_hp,
             "hud_reflects_kernel": hud_reflects_kernel,
+            "buy_result": buy_result,
+            "build_worked": build_worked,
             "console_errors": console_errors,
             "screenshot": os.path.abspath(screenshot_path),
         }))

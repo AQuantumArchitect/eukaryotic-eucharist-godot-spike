@@ -12,10 +12,9 @@ logic is reimplemented in GDScript.
 ordered, independently-verified phases (see `tools/test.sh`'s growing assertion list): (0) a real
 per-frame command channel into the kernel's actual `step()` — done; (1) minimal playable loop,
 player moves and renders under a following camera — done; (2) full entity/field/hazard/particle
-rendering — done; (3) full HUD, read-only — done; (4) build/shop economy; (5) visual
-polish/parity. Phases 4-5 are not yet built — there's no shop/build economy yet, and rendering is
-recognizable-but-simplified (see "Explicitly out of scope" below) rather than pixel-parity with
-index.html.
+rendering — done; (3) full HUD, read-only — done; (4) build/shop economy — done; (5) visual
+polish/parity. Phase 5 is not yet built — rendering is recognizable-but-simplified (see
+"Explicitly out of scope" below) rather than pixel-parity with index.html.
 
 ## Layout
 
@@ -78,9 +77,21 @@ tools/    build + regression-test scripts, owns zero engine logic
   is a plain-text port of index.html's `.vital` bars (HP/O2/depth/pressure/every `hud.resources[]`
   entry); `controls_legend.gd` ports `updateControls()`'s key -> action rows (index.html:1233),
   filtered by whether `hud.actions[]` actually has that action; `toast.gd` scans
-  `render.events` for one-shot notices, same array `checkDeathEvent()` reads, no pub/sub. No
-  build/shop UI yet — that's Phase 4, its own panel wired to `KernelBridge`'s discrete action
-  wrappers.
+  `render.events` for one-shot notices, same array `checkDeathEvent()` reads, no pub/sub.
+- **`view/hud/shop_panel.gd`/`.tscn` + `shop_logic.gd`** — the build/shop modal, toggled by `E`
+  when `hud.nearYuki`/`hud.nearCrab` (`game_view.gd`'s `_unhandled_input`), `Escape` to close.
+  `ShopLogic` ports `organState()`/`buildRoutes()`/`primaryBuild()`/`buildCategoryOf()`
+  (index.html:329-334, :1373-1399) as pure functions over `KernelBridge.get_yuki_offerings()`'s
+  fields — UI decision logic, not simulation, so porting it doesn't compromise "the kernel is the
+  only source of truth." `shop_panel.gd` keeps index.html's shared-filter-state design
+  (`BUILD_CATEGORIES`/`buildFilter`, index.html:300-357) as its own `build_filter`/
+  `build_category` state — this port has only one build surface so far (no separate DAG-chip row),
+  but the state is structured the same way so a second surface could share it later without a
+  rewrite. Each card's action routes through `doBuy()`'s own prefix rule (index.html:1334-1336): a
+  `"print_"` route id calls `KernelBridge.start_manufacturing()`, everything else calls
+  `KernelBridge.buy_offering()`. While the panel is open, `game_view.gd` passes `sheltered=true` to
+  `step_game()` — mirroring index.html's own `sheltered` flag (index.html:435): world time and
+  passive regen (`yukiRestore`) keep running, only player-command application pauses.
 - **`view/graph_view.gd` + `view/graph_view.tscn`** — the original DAG debug view. Builds one
   `GraphNode` per id appearing in the kernel's own `ORGAN_GRAPH_ROLE` / `ORGAN_GRAPH_EDGES` data,
   recolored/labeled each poll from `getHudProjection()`. Left untouched, no longer the default
@@ -154,6 +165,13 @@ existing `smoke_test.mjs`/`burnin.mjs` headless harness in the game repo, untouc
   a fresh `window.EE.getHudProjection(w).hp` read — proves the read-only HUD genuinely reflects
   live kernel state rather than stale or fabricated numbers. The tolerance (not exact equality)
   covers the one-tick drift between the two reads, since HP can regen/drain between them.
+- (Phase 4) drives `window.EE.buyOffering()` directly on the first currently-affordable bare-graft
+  offering and asserts it returns `ok:true` with the organelle's owned count actually incremented —
+  `KernelBridge.buy_offering()` is a thin 1:1 relay over this exact call, so this proves the
+  discrete-action channel works, the same scope Phase 0 proved for the per-frame command channel.
+  Doesn't drive `shop_panel.gd`'s own UI click (that needs the player standing near Yuki, not
+  guaranteed at this fixed seed/tick) — `ShopLogic`'s filter/routing logic is a pure port exercised
+  by reading, not a live click here; an honest scope limit, not a gap papered over.
 
 Caught a real, transient issue on first use (pre-port): the shared kernel was mid-edit by the
 other collaborator (a twilight-grazer maturation refactor) when the export copied it, producing
@@ -166,10 +184,10 @@ to catch, not something to "fix" here.
 already-served build) prints every human-readable line to stderr and exactly one JSON object to
 stdout — `{ok, t1, t2, ee_present, world_present, edges_len, player_x1, player_x2, player_moved,
 player_x3, player_x4, player_vx, input_moved_player, kernel_entities_len, godot_entity_count,
-entities_pooled_sane, godot_hud_hp, kernel_hud_hp, hud_reflects_kernel, console_errors,
-screenshot}` — so a bot can pipe stdout straight into a parser instead of scraping text.
-`--boot-wait`/`--settle-wait` override the default 20s/5s timing if a bot's environment is slower
-or needs a tighter loop.
+entities_pooled_sane, godot_hud_hp, kernel_hud_hp, hud_reflects_kernel, buy_result, build_worked,
+console_errors, screenshot}` — so a bot can pipe stdout straight into a parser instead of scraping
+text. `--boot-wait`/`--settle-wait` override the default 20s/5s timing if a bot's environment is
+slower or needs a tighter loop.
 
 Override `PORT`, `PYTHON_BIN`, or `SPIKE_CHROME_PATH` as env vars if the defaults (port 8788, the
 `torch118` venv's Python, a specific cached Chromium build) don't match your machine.
