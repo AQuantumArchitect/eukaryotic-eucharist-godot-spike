@@ -12,8 +12,8 @@ logic is reimplemented in GDScript.
 ordered, independently-verified phases (see `tools/test.sh`'s growing assertion list): (0) a real
 per-frame command channel into the kernel's actual `step()` — done; (1) minimal playable loop,
 player moves and renders under a following camera — done; (2) full entity/field/hazard/particle
-rendering — done; (3) full HUD; (4) build/shop economy; (5) visual polish/parity. Phases 3-5 are
-not yet built — right now there's no HUD chrome and no shop/build economy, and rendering is
+rendering — done; (3) full HUD, read-only — done; (4) build/shop economy; (5) visual
+polish/parity. Phases 4-5 are not yet built — there's no shop/build economy yet, and rendering is
 recognizable-but-simplified (see "Explicitly out of scope" below) rather than pixel-parity with
 index.html.
 
@@ -72,6 +72,15 @@ tools/    build + regression-test scripts, owns zero engine logic
   (index.html:1563-1671): recognizable footprint/color/fade, not the full per-resource-type
   gradient/glyph detail (Phase 5 polish). `NodePool` is the generic version of the same
   diff-and-pool pattern `EntityPool` uses, shared across all three effect layers.
+- **`view/hud/`** (`hud_root.tscn`/`.gd`, `vitals_panel.gd`, `controls_legend.gd`, `toast.gd`) —
+  read-only HUD chrome, instanced into `game_view.tscn`. All driven off the exact same `hud`/
+  `render` data `step_game()` already returns each frame — no new bridge calls. `vitals_panel.gd`
+  is a plain-text port of index.html's `.vital` bars (HP/O2/depth/pressure/every `hud.resources[]`
+  entry); `controls_legend.gd` ports `updateControls()`'s key -> action rows (index.html:1233),
+  filtered by whether `hud.actions[]` actually has that action; `toast.gd` scans
+  `render.events` for one-shot notices, same array `checkDeathEvent()` reads, no pub/sub. No
+  build/shop UI yet — that's Phase 4, its own panel wired to `KernelBridge`'s discrete action
+  wrappers.
 - **`view/graph_view.gd` + `view/graph_view.tscn`** — the original DAG debug view. Builds one
   `GraphNode` per id appearing in the kernel's own `ORGAN_GRAPH_ROLE` / `ORGAN_GRAPH_EDGES` data,
   recolored/labeled each poll from `getHudProjection()`. Left untouched, no longer the default
@@ -140,6 +149,11 @@ existing `smoke_test.mjs`/`burnin.mjs` headless harness in the game repo, untouc
   `EntityPool` is genuinely instantiating/tracking on-screen nodes. Not an exact-equality check:
   `EntityPool` deliberately culls off-screen entities (mirroring index.html's own `onScreen`
   culling, index.html:1505), so the pooled count is normally well below the kernel's true count.
+- (Phase 3) asserts `window.__eeGodotHudHp` (another debug push, this one of the exact `hud.hp`
+  Dictionary `game_view.gd` hands to `vitals_panel.gd` every frame) is within a small tolerance of
+  a fresh `window.EE.getHudProjection(w).hp` read — proves the read-only HUD genuinely reflects
+  live kernel state rather than stale or fabricated numbers. The tolerance (not exact equality)
+  covers the one-tick drift between the two reads, since HP can regen/drain between them.
 
 Caught a real, transient issue on first use (pre-port): the shared kernel was mid-edit by the
 other collaborator (a twilight-grazer maturation refactor) when the export copied it, producing
@@ -152,9 +166,10 @@ to catch, not something to "fix" here.
 already-served build) prints every human-readable line to stderr and exactly one JSON object to
 stdout — `{ok, t1, t2, ee_present, world_present, edges_len, player_x1, player_x2, player_moved,
 player_x3, player_x4, player_vx, input_moved_player, kernel_entities_len, godot_entity_count,
-entities_pooled_sane, console_errors, screenshot}` — so a bot can pipe stdout straight into a
-parser instead of scraping text. `--boot-wait`/`--settle-wait` override the default 20s/5s timing
-if a bot's environment is slower or needs a tighter loop.
+entities_pooled_sane, godot_hud_hp, kernel_hud_hp, hud_reflects_kernel, console_errors,
+screenshot}` — so a bot can pipe stdout straight into a parser instead of scraping text.
+`--boot-wait`/`--settle-wait` override the default 20s/5s timing if a bot's environment is slower
+or needs a tighter loop.
 
 Override `PORT`, `PYTHON_BIN`, or `SPIKE_CHROME_PATH` as env vars if the defaults (port 8788, the
 `torch118` venv's Python, a specific cached Chromium build) don't match your machine.

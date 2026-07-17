@@ -12,6 +12,7 @@ extends Node2D
 @onready var hazard_layer: Node2D = $HazardLayer
 @onready var particle_layer: Node2D = $ParticleLayer
 @onready var entity_layer: Node2D = $EntityLayer
+@onready var hud_root = $HudRoot
 
 const FIELD_SCRIPT := preload("res://view/effects/field_view.gd")
 const HAZARD_SCRIPT := preload("res://view/effects/hazard_view.gd")
@@ -60,9 +61,9 @@ func _physics_process(delta: float) -> void:
 	var snap := KernelBridge.step_game(command, delta, false)
 	if snap.is_empty():
 		return
-	_apply_snapshot(snap)
+	_apply_snapshot(snap, delta)
 
-func _apply_snapshot(snap: Dictionary) -> void:
+func _apply_snapshot(snap: Dictionary, delta: float) -> void:
 	var render: Dictionary = snap.get("render", {})
 	if render.is_empty():
 		return
@@ -92,11 +93,16 @@ func _apply_snapshot(snap: Dictionary) -> void:
 	var viewport_size := get_viewport_rect().size
 	entity_pool.update(entities, sim_t, camera.position, viewport_size, world_w, CULL_PAD)
 	if KernelBridge.is_bridge_available():
-		# Debug hook for tools/verify_bridge.py's Phase 2 check: exposes the pooled (on-screen)
-		# node count on `window` so Playwright can confirm EntityPool is genuinely
-		# instantiating/tracking nodes, not silently stuck at zero. One-way push (Godot -> JS);
-		# nothing reads this back into the game.
+		# Debug hooks for tools/verify_bridge.py, pushed one-way (Godot -> JS) via
+		# JavaScriptBridge.eval; nothing reads these back into the game.
+		# Phase 2: pooled (on-screen) entity count, confirming EntityPool is genuinely
+		# instantiating/tracking nodes, not silently stuck at zero.
 		JavaScriptBridge.eval("window.__eeGodotEntityCount = %d;" % entity_pool.count(), true)
+		# Phase 3: the exact hp Dictionary handed to the vitals HUD label this frame, so a test
+		# can confirm the displayed HUD genuinely reflects the kernel's own getHudProjection()
+		# read, not stale/made-up data.
+		var hud_hp: Dictionary = snap.get("hud", {}).get("hp", {})
+		JavaScriptBridge.eval("window.__eeGodotHudHp = {value: %f, max: %f};" % [float(hud_hp.get("value", -1.0)), float(hud_hp.get("max", -1.0))], true)
 
 	var cam_pos := camera.position
 	var w_w := world_w
@@ -113,5 +119,7 @@ func _apply_snapshot(snap: Dictionary) -> void:
 	field_pool.update(render.get("fields", []), unwrap_and_cull, func(node, item): node.update(item))
 	hazard_pool.update(render.get("hazards", []), unwrap_and_cull, func(node, item): node.update(item))
 	particle_pool.update(render.get("particles", []), unwrap_and_cull, func(node, item): node.update(item))
+
+	hud_root.apply(snap.get("hud", {}), render, delta)
 
 	status_label.text = "t = %.1fs  entities = %d" % [sim_t, entities.size()]

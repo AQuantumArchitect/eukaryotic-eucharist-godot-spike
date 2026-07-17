@@ -136,10 +136,27 @@ def main() -> int:
             and godot_entity_count <= kernel_entities_len
         )
 
+        # Phase 3 check: confirm the read-only HUD's vitals label genuinely reflects the kernel's
+        # own getHudProjection().hp, not stale/made-up data. window.__eeGodotHudHp is a debug hook
+        # game_view.gd pushes via JavaScriptBridge.eval every frame, sourced from the exact same
+        # `hud` dict handed to the vitals Label. A small tolerance covers the one-tick drift
+        # between the two reads (hp can regen/drain between them).
+        godot_hud_hp = page.evaluate("window.__eeGodotHudHp ?? null")
+        kernel_hud_hp = page.evaluate("""
+            (() => { const w = window.__eeWorld; return w ? window.EE.getHudProjection(w).hp : null; })()
+        """)
+        hud_reflects_kernel = (
+            godot_hud_hp is not None and kernel_hud_hp is not None
+            and godot_hud_hp.get("value", -1) >= 0
+            and abs(godot_hud_hp.get("value", -999) - kernel_hud_hp.get("value", -999)) < 2.0
+            and abs(godot_hud_hp.get("max", -999) - kernel_hud_hp.get("max", -999)) < 0.01
+        )
+
         log(args.json, f"t1={t1} t2={t2} window.EE={ee_present} world={world_present} edges={edges_len}")
         log(args.json, f"player_x1={player_x1} player_x2={player_x2} player_moved={player_moved}")
         log(args.json, f"player_x3={player_x3} player_x4={player_x4} player_vx={player_vx} input_moved_player={input_moved_player}")
         log(args.json, f"kernel_entities_len={kernel_entities_len} godot_entity_count={godot_entity_count} entities_pooled_sane={entities_pooled_sane}")
+        log(args.json, f"godot_hud_hp={godot_hud_hp} kernel_hud_hp={kernel_hud_hp} hud_reflects_kernel={hud_reflects_kernel}")
         page.screenshot(path=screenshot_path)
         log(args.json, f"Screenshot: {screenshot_path}")
         browser.close()
@@ -155,6 +172,7 @@ def main() -> int:
         and player_moved
         and input_moved_player
         and entities_pooled_sane
+        and hud_reflects_kernel
     )
 
     if args.json:
@@ -175,6 +193,9 @@ def main() -> int:
             "kernel_entities_len": kernel_entities_len,
             "godot_entity_count": godot_entity_count,
             "entities_pooled_sane": entities_pooled_sane,
+            "godot_hud_hp": godot_hud_hp,
+            "kernel_hud_hp": kernel_hud_hp,
+            "hud_reflects_kernel": hud_reflects_kernel,
             "console_errors": console_errors,
             "screenshot": os.path.abspath(screenshot_path),
         }))
