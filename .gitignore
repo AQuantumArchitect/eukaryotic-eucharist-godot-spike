@@ -1,3 +1,5 @@
 .godot/
 dist_web/
 *.translation
+verify_screenshot.png
+verify_screenshot.png.import
