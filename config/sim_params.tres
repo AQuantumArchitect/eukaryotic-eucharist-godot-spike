@@ -7,3 +7,4 @@ script = ExtResource("1")
 seed_val = 1001
 poll_interval_s = 1.0
 grid_columns = 8
+camera_y_bias = 0.53

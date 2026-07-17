@@ -95,8 +95,34 @@ def main() -> int:
             player_x1 is not None and player_x2 is not None and player_x2 != player_x1
         )
 
+        # Phase 1 check: dispatch REAL keyboard input at the Godot canvas and confirm the running
+        # game_view.tscn scene's own GameInput -> KernelBridge.step_game() physics loop moves the
+        # player — genuine input reaching Godot's Input singleton through its web export, not a
+        # JS-side-channel step call like the Phase 0 check above. Movement ramps up over
+        # MOTOR_RAMP_TIME (graph_kernel.mjs) rather than snapping to full speed, so a short
+        # before/after sample can land on a momentum transient — hold for 2.5s and read vx
+        # directly (it must end up clearly positive/rightward), not just "x changed".
+        page.click("#canvas")
+        player_x3 = page.evaluate("""
+            (() => { const w = window.__eeWorld; const e = w.entities.find(x => x.id === w.playerId); return e ? e.x : null; })()
+        """)
+        page.keyboard.down("d")
+        time.sleep(2.5)
+        player_vx = page.evaluate("""
+            (() => { const w = window.__eeWorld; const e = w.entities.find(x => x.id === w.playerId); return e ? e.vx : null; })()
+        """)
+        page.keyboard.up("d")
+        player_x4 = page.evaluate("""
+            (() => { const w = window.__eeWorld; const e = w.entities.find(x => x.id === w.playerId); return e ? e.x : null; })()
+        """)
+        input_moved_player = (
+            player_x3 is not None and player_x4 is not None and player_vx is not None
+            and player_x4 != player_x3 and player_vx > 5.0
+        )
+
         log(args.json, f"t1={t1} t2={t2} window.EE={ee_present} world={world_present} edges={edges_len}")
         log(args.json, f"player_x1={player_x1} player_x2={player_x2} player_moved={player_moved}")
+        log(args.json, f"player_x3={player_x3} player_x4={player_x4} player_vx={player_vx} input_moved_player={input_moved_player}")
         page.screenshot(path=screenshot_path)
         log(args.json, f"Screenshot: {screenshot_path}")
         browser.close()
@@ -110,6 +136,7 @@ def main() -> int:
         t1 is not None and t2 is not None and t2 > t1
         and ee_present and world_present and edges_len and edges_len > 0
         and player_moved
+        and input_moved_player
     )
 
     if args.json:
@@ -123,6 +150,10 @@ def main() -> int:
             "player_x1": player_x1,
             "player_x2": player_x2,
             "player_moved": player_moved,
+            "player_x3": player_x3,
+            "player_x4": player_x4,
+            "player_vx": player_vx,
+            "input_moved_player": input_moved_player,
             "console_errors": console_errors,
             "screenshot": os.path.abspath(screenshot_path),
         }))

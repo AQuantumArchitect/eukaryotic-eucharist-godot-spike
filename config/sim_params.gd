@@ -13,3 +13,8 @@ class_name SimParams
 
 ## GraphNode grid layout width, purely cosmetic.
 @export var grid_columns: int = 8
+
+## Vertical camera-follow bias for the game view: 0.5 = perfectly centered on the player, 0.53
+## matches index.html's own `player.y - innerHeight*.53` framing (index.html:440) — a touch more
+## world visible below the player than above.
+@export var camera_y_bias: float = 0.53
