@@ -7,12 +7,12 @@ config_version=5
 [application]
 
 config/name="Eukaryotic Eucharist — Godot Spike"
-run/main_scene="res://graph_view.tscn"
+run/main_scene="res://view/graph_view.tscn"
 config/features=PackedStringArray("4.5")
 
 [autoload]
 
-KernelBridge="*res://kernel_bridge.gd"
+KernelBridge="*res://bridge/kernel_bridge.gd"
 
 [display]
 

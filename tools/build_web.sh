@@ -2,7 +2,7 @@
 # Exports the spike to Web and copies the REAL, unmodified game kernel alongside the output —
 # no kernel edits, no build step inside the JS repo. Serve dist_web/ with any static file server.
 set -euo pipefail
-SPIKE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SPIKE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GODOT_BIN="${GODOT_BIN:-/home/primearchitect/.local/bin/godot}"
 GAME_KERNEL="$SPIKE_DIR/../eukarayotic_eucharist/eukaryotic_eucharist_mobile_v1_3_3/src/graph_kernel.mjs"
 DIST="$SPIKE_DIR/dist_web"

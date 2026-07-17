@@ -1,8 +1,13 @@
 extends Node
 ## Thin JavaScriptBridge client. Owns zero simulation logic — every call below just asks the
 ## unmodified graph_kernel.mjs (loaded into `window.EE` by the custom Web export shell, see
-## web_shell/head_include.html) to do the real work, and parses back a JSON string snapshot.
+## bridge/web_shell/head_include.html) to do the real work, and parses back a JSON string snapshot.
 ## Only meaningful in a Web export; JavaScriptBridge does not exist elsewhere.
+##
+## step_and_snapshot()'s {edges, roles, t, hud} shape is the deliberate integration seam: any
+## other GraphNode view, headless test bot, or future learning-model harness reads/writes state
+## through this exact JSON contract and the same window.EE surface — not through GDScript
+## internals. Keep this contract stable; extend it by adding keys, not by changing existing ones.
 
 var booted := false
 

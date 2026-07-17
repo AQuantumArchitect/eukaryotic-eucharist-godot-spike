@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="SimParams" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://config/sim_params.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+seed_val = 1001
+poll_interval_s = 1.0
+grid_columns = 8

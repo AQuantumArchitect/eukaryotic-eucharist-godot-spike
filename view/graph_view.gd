@@ -3,20 +3,23 @@ extends Control
 ## ORGAN_GRAPH_ROLE, src/graph_kernel.mjs:2070 / :551) — a live read-only mirror of the
 ## organelle -> resource/vital flow graph, fed entirely by the unmodified JS kernel via
 ## KernelBridge. No simulation logic lives here.
+##
+## Every tunable is read from config/sim_params.tres (a SimParams Resource) instead of being a
+## literal in this script — edit that .tres to retune seed/cadence/layout without touching code.
 
 @onready var graph: GraphEdit = $GraphEdit
 @onready var status_label: Label = $StatusLabel
 
+var params: SimParams = load("res://config/sim_params.tres")
 var node_by_id := {}
 var organelle_ids := {}
 var poll_timer := 0.0
-const POLL_INTERVAL := 1.0 # low-frequency structural view — the kernel ticks on its own cadence regardless
 
 func _ready() -> void:
 	if not KernelBridge.is_bridge_available():
 		status_label.text = "JavaScriptBridge not available — run the exported Web build in a browser, not the editor."
 		return
-	if not KernelBridge.boot(1001):
+	if not KernelBridge.boot(params.seed_val):
 		status_label.text = "Kernel boot failed — check the browser console."
 		return
 	var snap := KernelBridge.step_and_snapshot(0.0)
@@ -30,10 +33,10 @@ func _process(delta: float) -> void:
 	if not KernelBridge.booted:
 		return
 	poll_timer += delta
-	if poll_timer < POLL_INTERVAL:
+	if poll_timer < params.poll_interval_s:
 		return
 	poll_timer = 0.0
-	_apply_snapshot(KernelBridge.step_and_snapshot(POLL_INTERVAL))
+	_apply_snapshot(KernelBridge.step_and_snapshot(params.poll_interval_s))
 
 func _build_graph(snap: Dictionary) -> void:
 	var edges: Array = snap.get("edges", [])
@@ -47,7 +50,7 @@ func _build_graph(snap: Dictionary) -> void:
 		ids[str(e[0])] = true
 		ids[str(e[1])] = true
 	var i := 0
-	var cols := 8
+	var cols := params.grid_columns
 	for id in ids.keys():
 		var gn := GraphNode.new()
 		gn.title = id
