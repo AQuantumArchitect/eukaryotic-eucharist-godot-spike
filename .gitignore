@@ -3,3 +3,6 @@ dist_web/
 *.translation
 verify_screenshot.png
 verify_screenshot.png.import
+profile_screenshot.png
+profile_screenshot.png.import
+profile_trace.zip

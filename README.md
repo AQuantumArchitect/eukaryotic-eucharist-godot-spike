@@ -111,7 +111,44 @@ tools/    build + regression-test scripts, owns zero engine logic
   scene, still useful for inspecting organelle-graph state independent of the game view.
 - **`tools/`** — `build_web.sh` (export + copy in the real kernel), `test.sh` (one-command
   export/serve/verify/teardown loop), `verify_bridge.py` (the regression check, growing one
-  assertion per phase), `deploy_pages.sh` (push `dist_web/` to GitHub Pages).
+  assertion per phase), `deploy_pages.sh` (push `dist_web/` to GitHub Pages), `profile.sh` +
+  `profile_headed.py` (the performance profiling rig — see below).
+
+## Performance profiling: `tools/profile.sh`
+
+A separate rig from `test.sh` — not "is it correct," but "how fast is it": FPS, sim-throughput
+(sim-seconds advanced per real second — 1.0 = real-time), kernel/pooled entity-count scaling, and
+JS heap over a driven gameplay run. This is the baseline any future performance-tuning work (entity
+pool sizing, cull padding, poll cadence, etc.) needs to measure against.
+
+```
+./tools/profile.sh --json --duration 30
+```
+
+Runs a **headed** browser (a real window, Xvfb-backed on a machine with no physical display —
+confirmed available on this machine via `DISPLAY=:0` + `/usr/bin/Xvfb`), not `verify_bridge.py`'s
+headless mode, since that's the actual rendering path future work will tune. This mattered in
+practice: headless Chromium auto-falls-back to SwiftShader software WebGL2, but headed Chromium
+does **not** — under Xvfb (no real GPU) that means WebGL2 init fails outright unless forced via
+`--use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader`, which `profile_headed.py`
+now passes explicitly. Boot time under headed rendering is also noisier than headless, so the rig
+polls for `window.EE && window.__eeWorld` instead of a fixed sleep.
+
+Drives movement (rotating through WASD, not idling) for `--duration` seconds, sampling metrics
+every `--sample-interval` seconds, and writes:
+- A JSON report to stdout (`--json`): `{ok, duration_s, fps_avg, sim_throughput,
+  kernel_entities_min/max, godot_entities_min/max, js_heap_mb_min/max, sample_count, samples[],
+  console_errors, trace, screenshot}`.
+- A Playwright trace (`profile_trace.zip`, gitignored) — open at https://trace.playwright.dev
+  (drag-and-drop) or `npx playwright show-trace profile_trace.zip` for a full timeline (network,
+  JS, screenshots), not just the summary stats this script computes itself.
+
+**Smoke-tested and confirmed working** (booted in 6.1s, `ok: true`, sane entity/heap numbers) —
+but the absolute FPS/throughput figures from that run (`fps_avg: 1.6`, `sim_throughput: 0.26`) are
+**not a real baseline**: this machine had a long-running, unrelated, high-CPU Godot process
+(`SpaceWheat/🍄/🎛️/rig_listener.gd`) competing for the same cores during the smoke test. Re-run
+`profile.sh` on a quiet machine (or at least check `ps aux` for competing load first) before
+trusting any number from it as an actual performance baseline for optimizer work.
 
 ## The hook point: one stable JSON contract
 
