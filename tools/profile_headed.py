@@ -143,6 +143,7 @@ def main() -> int:
                         kernel_particles: render.particles.length,
                         godot_entities: window.__eeGodotEntityCount ?? null,
                         js_heap_mb: (performance.memory ? performance.memory.usedJSHeapSize / 1048576 : null),
+                        godot_perf: window.__eeGodotPerf ?? null,
                     };
                 })()
             """)
@@ -163,6 +164,14 @@ def main() -> int:
     entity_counts = [s["kernel_entities"] for s in samples if s.get("kernel_entities") is not None]
     godot_counts = [s["godot_entities"] for s in samples if s.get("godot_entities") is not None]
     heap_samples = [s["js_heap_mb"] for s in samples if s.get("js_heap_mb") is not None]
+    # godot_perf is Godot's own self-timed breakdown (see game_view.gd's _perf_* accumulators) —
+    # this is what actually tells us WHERE frame time goes, independent of the outer rAF/wall-clock
+    # FPS number, which can't distinguish "bridge/JS kernel is slow" from "Godot draw is slow".
+    perf_samples = [s["godot_perf"] for s in samples if s.get("godot_perf")]
+
+    def _avg(key):
+        vals = [p[key] for p in perf_samples if p.get(key) is not None]
+        return sum(vals) / len(vals) if vals else None
 
     report = {
         "ok": fps_avg is not None and fps_avg > 0 and sim_throughput is not None,
@@ -175,6 +184,13 @@ def main() -> int:
         "godot_entities_max": max(godot_counts) if godot_counts else None,
         "js_heap_mb_min": min(heap_samples) if heap_samples else None,
         "js_heap_mb_max": max(heap_samples) if heap_samples else None,
+        "godot_fps_avg": _avg("fps"),
+        "bridge_ms_avg": _avg("bridge_ms_avg"),
+        "apply_ms_avg": _avg("apply_ms_avg"),
+        "godot_process_ms_avg": _avg("process_ms"),
+        "godot_physics_ms_avg": _avg("physics_ms"),
+        "draw_calls_avg": _avg("draw_calls"),
+        "node_count_avg": _avg("node_count"),
         "sample_count": len(samples),
         "samples": samples,
         "console_errors": console_errors,
@@ -190,6 +206,10 @@ def main() -> int:
         print(f"Kernel entities: {report['kernel_entities_min']}-{report['kernel_entities_max']}")
         print(f"Godot pooled entities: {report['godot_entities_min']}-{report['godot_entities_max']}")
         print(f"JS heap: {report['js_heap_mb_min']}-{report['js_heap_mb_max']} MB")
+        print(f"Godot-reported FPS: {report['godot_fps_avg']}")
+        print(f"Bridge (eval+JSON) ms/frame: {report['bridge_ms_avg']}")
+        print(f"Apply (pool/draw) ms/frame: {report['apply_ms_avg']}")
+        print(f"Draw calls/frame: {report['draw_calls_avg']}  Node count: {report['node_count_avg']}")
         print(f"Trace: {trace_path}")
         print("RESULT:", "OK" if report["ok"] else "FAIL")
 

@@ -137,18 +137,50 @@ polls for `window.EE && window.__eeWorld` instead of a fixed sleep.
 Drives movement (rotating through WASD, not idling) for `--duration` seconds, sampling metrics
 every `--sample-interval` seconds, and writes:
 - A JSON report to stdout (`--json`): `{ok, duration_s, fps_avg, sim_throughput,
-  kernel_entities_min/max, godot_entities_min/max, js_heap_mb_min/max, sample_count, samples[],
-  console_errors, trace, screenshot}`.
+  kernel_entities_min/max, godot_entities_min/max, js_heap_mb_min/max, godot_fps_avg,
+  bridge_ms_avg, apply_ms_avg, godot_process_ms_avg, godot_physics_ms_avg, draw_calls_avg,
+  node_count_avg, sample_count, samples[], console_errors, trace, screenshot}`.
 - A Playwright trace (`profile_trace.zip`, gitignored) — open at https://trace.playwright.dev
   (drag-and-drop) or `npx playwright show-trace profile_trace.zip` for a full timeline (network,
   JS, screenshots), not just the summary stats this script computes itself.
 
-**Smoke-tested and confirmed working** (booted in 6.1s, `ok: true`, sane entity/heap numbers) —
-but the absolute FPS/throughput figures from that run (`fps_avg: 1.6`, `sim_throughput: 0.26`) are
-**not a real baseline**: this machine had a long-running, unrelated, high-CPU Godot process
-(`SpaceWheat/🍄/🎛️/rig_listener.gd`) competing for the same cores during the smoke test. Re-run
-`profile.sh` on a quiet machine (or at least check `ps aux` for competing load first) before
-trusting any number from it as an actual performance baseline for optimizer work.
+**This machine is not a quiet baseline and never will be** (a long-running, unrelated, ~27%-CPU
+Godot process — `SpaceWheat/🍄/🎛️/rig_listener.gd` — is permanently running here, load average
+typically 2-4 on 8 cores) — so rather than chase a clean number that doesn't exist, `profile.sh`
+embraces the constraint: it pins itself and the Chromium it launches to `CPU_CORES` (default **2**,
+via `taskset`) so every run measures the game against a deliberately starved core budget, which is
+closer to a real target device than "however many cores happen to be free right now" anyway. Set
+`CPU_CORES=0` to disable pinning.
+
+`game_view.gd` also self-times its own `_physics_process` (bridge round-trip vs. local pool/draw
+work) and republishes Godot's own `Performance` monitors once a second to `window.__eeGodotPerf`,
+which the profiler samples — this is what actually let us find and fix a real bottleneck instead of
+just reporting an opaque FPS number:
+
+**Bottleneck found:** under `CPU_CORES=2`, `bridge_ms_avg` (the `JavaScriptBridge.eval` +
+`JSON.stringify`/`JSON.parse` round trip for `step_game()`'s full `getRenderProjection()` +
+`getHudProjection()` payload) was **~106ms/physics-frame**, vs. `apply_ms_avg` (everything Godot
+does locally with that data — entity pool diff, draw) at **~5ms** — a ~20x gap. The full render/HUD
+snapshot was being re-fetched every single physics frame even though only the player's *command*
+needs to apply that often; the visuals don't need a fresh snapshot at the same 60Hz cadence.
+
+**Fix:** `SimParams.render_fetch_stride` (default 3) + `KernelBridge.step_light()` — every physics
+frame still calls the real `K.step()` (sim correctness and input responsiveness are unaffected),
+but only every Nth frame pays for the full JSON round trip; the rest use a cheap step-only eval that
+returns just `{t}`. Measured on this same 2-core-pinned rig, before/after:
+
+| metric | stride=1 (before) | stride=3 (after) |
+|---|---|---|
+| `sim_throughput` (sim-s / real-s) | 0.14 | 0.38 (**2.7x**) |
+| `bridge_ms_avg` | 105.9ms | 38.3ms |
+| `apply_ms_avg` | 4.9ms | 1.3ms |
+| `godot_physics_ms_avg` | 202ms | 140ms |
+
+`./tools/test.sh --json` still passes (`ok: true`) with the stride in place — a real correctness
+check, not just a faster number. This is the shape future optimizer work should follow: profile
+under `CPU_CORES=2`, look at `bridge_ms_avg` vs `apply_ms_avg` to find which side of the bridge the
+cost is actually on, fix, re-measure on the same constrained budget, then run `test.sh` before
+trusting it.
 
 ## The hook point: one stable JSON contract
 

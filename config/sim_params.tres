@@ -8,3 +8,4 @@ seed_val = 1001
 poll_interval_s = 1.0
 grid_columns = 8
 camera_y_bias = 0.53
+render_fetch_stride = 3

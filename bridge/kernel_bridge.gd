@@ -90,6 +90,27 @@ func step_game(command: Dictionary, dt: float, sheltered: bool = false) -> Dicti
 	var data = _eval_json(code)
 	return data if data is Dictionary else {}
 
+## Same real K.step() as step_game — command still applies, sim time still advances by dt — but
+## returns just {t} instead of the full render+HUD projection. Exists purely for cost: profiling
+## (tools/profile.sh) showed the getRenderProjection/getHudProjection JSON.stringify + GDScript
+## JSON.parse round trip is ~20x the cost of everything Godot does locally with the result, so
+## game_view.gd calls this on the frames it doesn't need a fresh visual snapshot
+## (SimParams.render_fetch_stride), and step_game only on the frames it does. Sim correctness is
+## unaffected either way — the kernel step happens every physics frame regardless of which
+## wrapper is called.
+func step_light(command: Dictionary, dt: float, sheltered: bool = false) -> float:
+	if not booted:
+		return 0.0
+	var code := """
+	(function() {
+		var w = window.__eeWorld;
+		window.EE.step(w, %s, %f, %s);
+		return String(w.t);
+	})()
+	""" % [JSON.stringify(command), dt, ("true" if sheltered else "false")]
+	var result = JavaScriptBridge.eval(code, true)
+	return float(result) if typeof(result) in [TYPE_STRING, TYPE_FLOAT, TYPE_INT] else 0.0
+
 ## Discrete (non-per-frame) action wrappers. Each is a single eval that just relays the kernel's
 ## own {ok, reason, ...} result straight back — no interpretation, no branching, so this file stays
 ## zero-sim-logic. All default to acting on the current player (world.playerId), matching every one

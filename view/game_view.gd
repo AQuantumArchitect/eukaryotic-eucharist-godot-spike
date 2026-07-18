@@ -32,6 +32,15 @@ var hazard_pool: NodePool
 var particle_pool: NodePool
 var last_hud: Dictionary = {}
 
+# Perf instrumentation for tools/profile.sh — accumulates per-frame timings and flushes an
+# average to window.__eeGodotPerf once a second, so the headed profiling rig can see WHERE frame
+# time goes (bridge eval/JSON round trip vs. local pool/draw work) instead of only an outside FPS
+# number that can't distinguish "JS kernel is slow" from "Godot rendering is slow".
+var _perf_bridge_usec_sum := 0
+var _perf_apply_usec_sum := 0
+var _perf_frame_count := 0
+var _perf_flush_accum := 0.0
+
 func _ready() -> void:
 	entity_pool = EntityPool.new(entity_layer)
 	field_pool = NodePool.new(field_layer, func(_item): return _make_node(FIELD_SCRIPT))
@@ -72,6 +81,8 @@ func _toggle_shop() -> void:
 	elif last_hud.get("nearYuki", false):
 		shop_panel.open_shop("yuki")
 
+var _frame_idx := 0
+
 func _physics_process(delta: float) -> void:
 	if not booted:
 		return
@@ -80,10 +91,41 @@ func _physics_process(delta: float) -> void:
 	# Sheltered mirrors index.html's own `sheltered = shop is open` flag (index.html:435): K.step
 	# still advances world.t and runs yukiRestore's passive regen, it just skips
 	# applyPlayerCommands — the "sim paused for the player" the shop modal wants, not a hard freeze.
-	var snap := KernelBridge.step_game(command, delta, shop_panel.visible)
-	if snap.is_empty():
-		return
-	_apply_snapshot(snap, delta)
+	_frame_idx += 1
+	var stride: int = max(1, params.render_fetch_stride)
+	var want_fetch: bool = (_frame_idx % stride) == 0
+	var t0 := Time.get_ticks_usec()
+	var snap := {}
+	if want_fetch:
+		snap = KernelBridge.step_game(command, delta, shop_panel.visible)
+	else:
+		KernelBridge.step_light(command, delta, shop_panel.visible)
+	var t1 := Time.get_ticks_usec()
+	if not snap.is_empty():
+		_apply_snapshot(snap, delta)
+	var t2 := Time.get_ticks_usec()
+	_perf_bridge_usec_sum += (t1 - t0)
+	_perf_apply_usec_sum += (t2 - t1)
+	_perf_frame_count += 1
+	_perf_flush_accum += delta
+	if _perf_flush_accum >= 1.0 and KernelBridge.is_bridge_available():
+		var n: int = max(1, _perf_frame_count)
+		var payload := {
+			"fps": Engine.get_frames_per_second(),
+			"bridge_ms_avg": (_perf_bridge_usec_sum / float(n)) / 1000.0,
+			"apply_ms_avg": (_perf_apply_usec_sum / float(n)) / 1000.0,
+			"process_ms": Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
+			"physics_ms": Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
+			"draw_calls": Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+			"node_count": Performance.get_monitor(Performance.OBJECT_NODE_COUNT),
+			"pooled_entities": entity_pool.count(),
+			"frame_count": n,
+		}
+		JavaScriptBridge.eval("window.__eeGodotPerf = %s;" % JSON.stringify(payload), true)
+		_perf_bridge_usec_sum = 0
+		_perf_apply_usec_sum = 0
+		_perf_frame_count = 0
+		_perf_flush_accum = 0.0
 
 func _apply_snapshot(snap: Dictionary, delta: float) -> void:
 	var render: Dictionary = snap.get("render", {})

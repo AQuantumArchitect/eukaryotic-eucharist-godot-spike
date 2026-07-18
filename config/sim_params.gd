@@ -18,3 +18,12 @@ class_name SimParams
 ## matches index.html's own `player.y - innerHeight*.53` framing (index.html:440) — a touch more
 ## world visible below the player than above.
 @export var camera_y_bias: float = 0.53
+
+## Every _physics_process frame must call K.step() (that's what advances the sim and applies the
+## player's command — skipping it would make input feel broken), but NOT every frame needs to
+## pull back the full getRenderProjection()/getHudProjection() JSON payload — that's what actually
+## costs time (confirmed via tools/profile.sh: ~100ms/frame in the bridge eval+JSON round trip vs.
+## ~5ms for everything Godot does locally with the result). render_fetch_stride=N means "step every
+## frame, but only fetch+apply a fresh render/HUD snapshot every Nth frame" — 1 = fetch every frame
+## (old behavior), higher = cheaper but the world visually updates less often between fetches.
+@export var render_fetch_stride: int = 3
