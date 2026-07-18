@@ -13,8 +13,14 @@ ordered, independently-verified phases (see `tools/test.sh`'s growing assertion 
 per-frame command channel into the kernel's actual `step()` — done; (1) minimal playable loop,
 player moves and renders under a following camera — done; (2) full entity/field/hazard/particle
 rendering — done; (3) full HUD, read-only — done; (4) build/shop economy — done; (5) visual
-polish/parity. Phase 5 is not yet built — rendering is recognizable-but-simplified (see
-"Explicitly out of scope" below) rather than pixel-parity with index.html.
+polish/parity — done as a LIGHT pass (blob wobble + a simplified depth/oxygen vignette only; see
+"Explicitly out of scope" below for what's still deliberately not ported). All five phases are now
+built; rendering stays recognizable-but-simplified rather than pixel-parity with index.html.
+
+**`tools/build_web.sh` note:** the JS kernel repo split `graph_kernel.mjs` into a barrel file
+(`export * from './simCore.mjs'` etc.) partway through this port — `build_web.sh` now copies every
+`.mjs` file in the kernel's `src/` directory, not just the entry point, so this build survives
+further splits there without needing an edit here each time.
 
 ## Layout
 
@@ -58,26 +64,33 @@ tools/    build + regression-test scripts, owns zero engine logic
   gets a pooled Godot node, diffed against the kernel's own array each frame (new ids spawn, gone
   ids free) and positioned via `WorldWrap`'s nearest-copy unwrap — cheaper than index.html's
   brute-force 3x world redraw (index.html:1507) since Godot holds persistent nodes rather than
-  redrawing immediate-mode every frame; ghost-duplication exactly at the seam is Phase 5 polish,
-  not implemented yet. `view/entities/body_factory.gd` dispatches on `bodyPlan`
-  (`body_blob/spiny/jelly/ciliate/maw/amoeba/colonial/brood.gd`) or `controller==='shroomba'`
-  (`body_crab.gd`), one script per plan porting the matching `index.html` draw function
-  (`:1887-1944`, `:1705-1731`) as a static silhouette — per-frame wobble/pulse/beat-cycle juice is
-  cosmetic and deferred to Phase 5, not simulation data, so nothing gameplay-relevant is missing.
-  `view/entities/body_colors.gd` ports the hit-flash/duress-tint color math (`bodyFill`/
-  `bodyStroke`, index.html:1851-1875).
+  redrawing immediate-mode every frame; ghost-duplication exactly at the seam stays undone (light
+  Phase 5 didn't reach it — see "Explicitly out of scope"). `view/entities/body_factory.gd`
+  dispatches on `bodyPlan` (`body_blob/spiny/jelly/ciliate/maw/amoeba/colonial/brood.gd`) or
+  `controller==='shroomba'` (`body_crab.gd`), one script per plan porting the matching
+  `index.html` draw function (`:1887-1944`, `:1705-1731`). `body_blob.gd` — the default plan, used
+  by the player and most unclassified NPCs — got the one animation light Phase 5 spent its budget
+  on: per-vertex sine wobble + speed-based stretch/shrink, same formula as the original
+  (index.html:1898). Every other plan stays a static silhouette; their own wobble/pulse/beat-cycle
+  juice, plus internal-organelle "confetti" and appendage rendering, are still cosmetic and still
+  deferred. `view/entities/body_colors.gd` ports the hit-flash/duress-tint color math (`bodyFill`/
+  `bodyStroke`, index.html:1851-1875) — this was already live before Phase 5, not new.
 - **`view/effects/`** (`field_view.gd`, `hazard_view.gd`, `particle_view.gd`) + `view/node_pool.gd`
   — simplified flat-circle ports of `drawFields`/`drawHazards`/`drawParticles`
   (index.html:1563-1671): recognizable footprint/color/fade, not the full per-resource-type
   gradient/glyph detail (Phase 5 polish). `NodePool` is the generic version of the same
   diff-and-pool pattern `EntityPool` uses, shared across all three effect layers.
-- **`view/hud/`** (`hud_root.tscn`/`.gd`, `vitals_panel.gd`, `controls_legend.gd`, `toast.gd`) —
-  read-only HUD chrome, instanced into `game_view.tscn`. All driven off the exact same `hud`/
-  `render` data `step_game()` already returns each frame — no new bridge calls. `vitals_panel.gd`
-  is a plain-text port of index.html's `.vital` bars (HP/O2/depth/pressure/every `hud.resources[]`
-  entry); `controls_legend.gd` ports `updateControls()`'s key -> action rows (index.html:1233),
-  filtered by whether `hud.actions[]` actually has that action; `toast.gd` scans
+- **`view/hud/`** (`hud_root.tscn`/`.gd`, `vitals_panel.gd`, `controls_legend.gd`, `toast.gd`,
+  `vignette.gd`) — read-only HUD chrome, instanced into `game_view.tscn`. All driven off the exact
+  same `hud`/`render` data `step_game()` already returns each frame — no new bridge calls.
+  `vitals_panel.gd` is a plain-text port of index.html's `.vital` bars (HP/O2/depth/pressure/every
+  `hud.resources[]` entry); `controls_legend.gd` ports `updateControls()`'s key -> action rows
+  (index.html:1233), filtered by whether `hud.actions[]` actually has that action; `toast.gd` scans
   `render.events` for one-shot notices, same array `checkDeathEvent()` reads, no pub/sub.
+  `vignette.gd` (light Phase 5) is a simplified stand-in for `drawVignette` (index.html:1960): a
+  flat full-screen dark tint scaled by depth/oxygen danger, not a true radial gradient centered on
+  the player (Godot has no built-in radial-fill primitive without a shader) — still reads as
+  "getting dangerous," just not radial.
 - **`view/hud/shop_panel.gd`/`.tscn` + `shop_logic.gd`** — the build/shop modal, toggled by `E`
   when `hud.nearYuki`/`hud.nearCrab` (`game_view.gd`'s `_unhandled_input`), `Escape` to close.
   `ShopLogic` ports `organState()`/`buildRoutes()`/`primaryBuild()`/`buildCategoryOf()`
@@ -197,14 +210,15 @@ Override `PORT`, `PYTHON_BIN`, or `SPIKE_CHROME_PATH` as env vars if the default
 - Native desktop/mobile export (`JavaScriptBridge` is Web-only; native needs a GDExtension-embedded
   JS engine — `godot-quickjs` or `GodotJS` are the two real existing options to evaluate next).
 - Audio (index.html itself has none).
-- True multi-touch / on-screen joystick+button parity — keyboard+mouse only through the planned
-  Phase 4; touch is an optional future phase, not part of the current port plan.
+- True multi-touch / on-screen joystick+button parity — keyboard+mouse only.
 - Pixel-perfect visual parity with index.html's canvas rendering — the goal is recognizable and
-  playable, not a faithful clone of every gradient/bezier curve. Concretely deferred to a future
-  Phase 5: per-frame body wobble/pulse/beat-cycle animation, internal-organelle "confetti" and
-  external appendage rendering (~60 organelle-specific draw branches, decorative not gameplay),
-  the full per-resource-type field/hazard/particle gradient and glyph detail, and ghost-entity
-  duplication exactly at the world's wrap seam.
+  playable, not a faithful clone of every gradient/bezier curve. Phase 5 landed as a LIGHT pass
+  (blob wobble + a flat-tint vignette) and stopped there; still not done, on purpose: every other
+  body plan's own wobble/pulse/beat-cycle animation, internal-organelle "confetti" and external
+  appendage rendering (~60 organelle-specific draw branches, decorative not gameplay), the full
+  per-resource-type field/hazard/particle gradient and glyph detail, a true radial vignette, and
+  ghost-entity duplication exactly at the world's wrap seam. None of this is gameplay-relevant —
+  revisit only if it's ever actually worth the time against other priorities.
 - A general-purpose GraphEdit *authoring* tool for `graph_view.tscn` (it's a read-only live view).
 - A generic multi-project test framework. `tools/verify_bridge.py --json` is this project's own
   bot-facing contract; it deliberately isn't an attempt to unify testing across every parallel

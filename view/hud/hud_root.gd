@@ -6,8 +6,10 @@ extends CanvasLayer
 @onready var vitals = $Vitals
 @onready var controls = $Controls
 @onready var toast = $Toast
+@onready var vignette = $Vignette
 
 func apply(hud: Dictionary, render: Dictionary, delta: float) -> void:
 	vitals.apply(hud)
 	controls.apply(hud)
 	toast.apply(render.get("events", []), delta)
+	vignette.apply(hud)
